@@ -122,11 +122,13 @@ const validateRequest = (schema: z.ZodSchema) => {
   };
 };
 
-app.get('/health', (req: Request, res: Response) => {
+const apiRouter = express.Router();
+
+apiRouter.get('/health', (req: Request, res: Response) => {
   res.status(200).json({ status: 'ok' });
 });
 
-app.post('/auth/login', validateRequest(cashierLoginSchema), async (req: Request, res: Response) => {
+apiRouter.post('/auth/login', validateRequest(cashierLoginSchema), async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
 
@@ -147,7 +149,7 @@ app.post('/auth/login', validateRequest(cashierLoginSchema), async (req: Request
   }
 });
 
-app.get('/products/search', async (req: Request, res: Response) => {
+apiRouter.get('/products/search', async (req: Request, res: Response) => {
   try {
     const { sku } = req.query;
 
@@ -175,7 +177,7 @@ app.get('/products/search', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/products/:id', async (req: Request, res: Response) => {
+apiRouter.get('/products/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const doc = await db.collection('products').doc(id).get();
@@ -194,7 +196,7 @@ app.get('/products/:id', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/orders', validateRequest(createOrderSchema), async (req: Request, res: Response) => {
+apiRouter.post('/orders', validateRequest(createOrderSchema), async (req: Request, res: Response) => {
   try {
     const { listType } = req.body;
     const clientId = req.headers['x-client-id'] as string || 'anonymous';
@@ -222,7 +224,7 @@ app.post('/orders', validateRequest(createOrderSchema), async (req: Request, res
   }
 });
 
-app.post('/orders/:orderId/items', validateRequest(addToOrderSchema), async (req: Request, res: Response) => {
+apiRouter.post('/orders/:orderId/items', validateRequest(addToOrderSchema), async (req: Request, res: Response) => {
   try {
     const { orderId } = req.params;
     const { sku, quantity, color } = req.body;
@@ -269,7 +271,7 @@ app.post('/orders/:orderId/items', validateRequest(addToOrderSchema), async (req
   }
 });
 
-app.get('/orders/:orderId', async (req: Request, res: Response) => {
+apiRouter.get('/orders/:orderId', async (req: Request, res: Response) => {
   try {
     const { orderId } = req.params;
     const doc = await db.collection('orders').doc(orderId).get();
@@ -292,7 +294,7 @@ app.get('/orders/:orderId', async (req: Request, res: Response) => {
   }
 });
 
-app.put('/orders/:orderId/items/:itemIndex', validateRequest(updateOrderItemSchema), async (req: Request, res: Response) => {
+apiRouter.put('/orders/:orderId/items/:itemIndex', validateRequest(updateOrderItemSchema), async (req: Request, res: Response) => {
   try {
     const { orderId, itemIndex } = req.params;
     const { quantity, listType } = req.body;
@@ -336,7 +338,7 @@ app.put('/orders/:orderId/items/:itemIndex', validateRequest(updateOrderItemSche
   }
 });
 
-app.delete('/orders/:orderId/items/:itemIndex', async (req: Request, res: Response) => {
+apiRouter.delete('/orders/:orderId/items/:itemIndex', async (req: Request, res: Response) => {
   try {
     const { orderId, itemIndex } = req.params;
     const index = parseInt(itemIndex);
@@ -365,7 +367,7 @@ app.delete('/orders/:orderId/items/:itemIndex', async (req: Request, res: Respon
   }
 });
 
-app.post('/orders/:orderId/close', async (req: Request, res: Response) => {
+apiRouter.post('/orders/:orderId/close', async (req: Request, res: Response) => {
   try {
     const { orderId } = req.params;
 
@@ -386,7 +388,7 @@ app.post('/orders/:orderId/close', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/orders/code/:orderCode', cashierAuthMiddleware, async (req: AuthRequest, res: Response) => {
+apiRouter.get('/orders/code/:orderCode', cashierAuthMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const { orderCode } = req.params;
 
@@ -414,7 +416,7 @@ app.get('/orders/code/:orderCode', cashierAuthMiddleware, async (req: AuthReques
   }
 });
 
-app.put('/orders/:orderId/status', cashierAuthMiddleware, async (req: AuthRequest, res: Response) => {
+apiRouter.put('/orders/:orderId/status', cashierAuthMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const { orderId } = req.params;
     const { status } = req.body;
@@ -441,7 +443,7 @@ app.put('/orders/:orderId/status', cashierAuthMiddleware, async (req: AuthReques
   }
 });
 
-app.post('/admin/products', validateRequest(createProductSchema), async (req: Request, res: Response) => {
+apiRouter.post('/admin/products', validateRequest(createProductSchema), async (req: Request, res: Response) => {
   try {
     const { sku, name, price, description, image, colors } = req.body;
 
@@ -477,7 +479,7 @@ app.post('/admin/products', validateRequest(createProductSchema), async (req: Re
   }
 });
 
-app.put('/admin/products/:productId', validateRequest(updateProductSchema), async (req: Request, res: Response) => {
+apiRouter.put('/admin/products/:productId', validateRequest(updateProductSchema), async (req: Request, res: Response) => {
   try {
     const { productId } = req.params;
     const updates = req.body;
@@ -499,7 +501,7 @@ app.put('/admin/products/:productId', validateRequest(updateProductSchema), asyn
   }
 });
 
-app.post('/admin/products/import', async (req: Request, res: Response) => {
+apiRouter.post('/admin/products/import', async (req: Request, res: Response) => {
   try {
     const { products } = req.body;
 
@@ -531,7 +533,7 @@ app.post('/admin/products/import', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/admin/products', async (req: Request, res: Response) => {
+apiRouter.get('/admin/products', async (req: Request, res: Response) => {
   try {
     const snapshot = await db.collection('products').limit(100).get();
     const products = snapshot.docs.map(doc => ({
@@ -554,6 +556,8 @@ function generateOrderCode(): string {
   }
   return code;
 }
+
+app.use('/api', apiRouter);
 
 app.use((req: Request, res: Response) => {
   res.status(404).json({ error: 'Endpoint not found' });
