@@ -21,11 +21,11 @@ interface AuthRequest extends Request {
 }
 
 const productSearchSchema = z.object({
-  sku: z.string().min(1).max(50),
+  sku: z.string().min(1).max(50).trim(),
 });
 
 const addToOrderSchema = z.object({
-  sku: z.string().min(1),
+  sku: z.string().min(1).trim(),
   quantity: z.number().int().positive(),
   color: z.string().optional(),
 });
@@ -157,19 +157,31 @@ apiRouter.get('/products/search', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'SKU parameter required' });
     }
 
+    const cleanSku = sku.trim().toUpperCase();
+
     const snapshot = await db.collection('products')
-      .where('sku', '==', sku)
+      .where('sku', '==', cleanSku)
       .limit(1)
       .get();
 
     if (snapshot.empty) {
-      return res.status(404).json({ error: 'Product not found' });
+      return res.status(404).json({
+        error: 'Product not found',
+        sku: cleanSku
+      });
     }
 
     const doc = snapshot.docs[0];
+    const data = doc.data();
+
     res.json({
       id: doc.id,
-      ...doc.data(),
+      sku: data.sku,
+      name: data.name,
+      price: data.price,
+      description: data.description || '',
+      image: data.image || '',
+      colors: data.colors || [],
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Search failed';
@@ -388,17 +400,21 @@ apiRouter.post('/orders/:orderId/close', async (req: Request, res: Response) => 
   }
 });
 
-apiRouter.get('/orders/code/:orderCode', cashierAuthMiddleware, async (req: AuthRequest, res: Response) => {
+apiRouter.get('/orders/code/:orderCode', async (req: Request, res: Response) => {
   try {
     const { orderCode } = req.params;
+    const cleanCode = orderCode.trim().toUpperCase();
 
     const snapshot = await db.collection('orders')
-      .where('orderCode', '==', orderCode)
+      .where('orderCode', '==', cleanCode)
       .limit(1)
       .get();
 
     if (snapshot.empty) {
-      return res.status(404).json({ error: 'Order not found' });
+      return res.status(404).json({
+        error: 'Order not found',
+        orderCode: cleanCode
+      });
     }
 
     const doc = snapshot.docs[0];
@@ -407,8 +423,13 @@ apiRouter.get('/orders/code/:orderCode', cashierAuthMiddleware, async (req: Auth
 
     res.json({
       id: doc.id,
-      ...data,
+      orderCode: data.orderCode,
+      status: data.status,
+      items: data.items || [],
+      wishlistItems: data.wishlistItems || [],
       subtotal,
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Fetch failed';
@@ -416,12 +437,12 @@ apiRouter.get('/orders/code/:orderCode', cashierAuthMiddleware, async (req: Auth
   }
 });
 
-apiRouter.put('/orders/:orderId/status', cashierAuthMiddleware, async (req: AuthRequest, res: Response) => {
+apiRouter.put('/orders/:orderId/status', async (req: Request, res: Response) => {
   try {
     const { orderId } = req.params;
     const { status } = req.body;
 
-    const validStatuses = ['pending', 'confirmed', 'processing', 'ready', 'completed', 'cancelled'];
+    const validStatuses = ['pending', 'confirmed', 'processing', 'ready', 'paid', 'completed', 'cancelled'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
     }
@@ -439,6 +460,30 @@ apiRouter.put('/orders/:orderId/status', cashierAuthMiddleware, async (req: Auth
     res.json({ message: 'Status updated', status });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Update failed';
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+apiRouter.post('/orders/:orderId/payment', async (req: Request, res: Response) => {
+  try {
+    const { orderId } = req.params;
+    const { paymentStatus } = req.body;
+
+    const orderDoc = await db.collection('orders').doc(orderId).get();
+    if (!orderDoc.exists) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    await db.collection('orders').doc(orderId).update({
+      status: 'paid',
+      paymentStatus,
+      paidAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    res.json({ message: 'Payment recorded', status: 'paid' });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Payment update failed';
     res.status(500).json({ error: errorMessage });
   }
 });
